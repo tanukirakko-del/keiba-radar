@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>G1直前オッズ下落レーダー</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; background: #0e2417; color: #eef5ee; }
+  header { background: #14532d; padding: 12px 14px; position: sticky; top: 0; z-index: 5; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; font-size: 12px; opacity: .85; }
+  main { padding: 12px; max-width: 760px; margin: 0 auto; }
+  .card { background: #173d24; border: 1px solid #2b5a37; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .card h2 { margin: 0 0 8px; font-size: 16px; }
+  .card h3 { margin: 10px 0 6px; font-size: 14px; }
+  button { background: #22c55e; color: #052e12; border: none; border-radius: 10px; padding: 10px 14px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  button.sub { background: #2b5a37; color: #eef5ee; }
+  button.danger { background: #7f1d1d; color: #fee; }
+  button:disabled { opacity: .45; }
+  input, select, textarea { width: 100%; background: #0b1c10; color: #eef5ee; border: 1px solid #2b5a37; border-radius: 8px; padding: 9px; font-size: 15px; }
+  textarea { min-height: 110px; font-size: 13px; }
+  label { display: block; font-size: 13px; margin: 8px 0 4px; opacity: .9; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 6px 4px; border-bottom: 1px solid #2b5a37; text-align: right; }
+  th { font-size: 12px; opacity: .8; }
+  td.name, th.name { text-align: left; }
+  .drop-hot { color: #f87171; font-weight: 800; }
+  .drop-mid { color: #fb923c; font-weight: 700; }
+  .drop-low { color: #facc15; }
+  .rose { color: #7dd3fc; }
+  .badge { display: inline-block; min-width: 26px; text-align: center; border-radius: 6px; padding: 1px 5px; font-weight: 800; background: #2b5a37; }
+  .badge.b1 { background: #b45309; color: #fff7ed; }
+  .badge.b2 { background: #6b7280; color: #fff; }
+  .badge.b3 { background: #92400e; color: #ffedd5; }
+  .rowbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .muted { font-size: 12px; opacity: .75; line-height: 1.6; }
+  .race-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 4px; border-bottom: 1px solid #2b5a37; cursor: pointer; }
+  .race-item:last-child { border-bottom: none; }
+  .hidden { display: none; }
+  .grid-input { width: 74px; display: inline-block; }
+  .grid-name { width: 100%; min-width: 110px; }
+  select.fin { width: 84px; display: inline-block; }
+  .stat-band td:first-child { text-align: left; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏇 G1直前オッズ下落レーダー</h1>
+  <p>発走10分前と直前（2〜3分前）の単勝オッズを比べて、下落率で並べる予想＆検証ツール</p>
+</header>
+<main>
+  <!-- レース一覧 -->
+  <section id="view-list">
+    <div class="card">
+      <h2>対象レース（G1のみ）</h2>
+      <div id="raceList"></div>
+      <div class="rowbtns">
+        <button id="btnNew">＋ レースを追加</button>
+        <button class="sub" id="btnStats">📊 検証データを見る</button>
+      </div>
+      <p class="muted">使い方：レース当日の発走10分前にオッズ表をコピペ（記録A）、2〜3分前にもう一度コピペ（記録B）。下落率ランキングが出る。レース後に着順を入れると、下落率の帯ごとに「本当に当たったか」を集計して検証できる。</p>
+    </div>
+    <div class="card">
+      <h2>データの扱い</h2>
+      <p class="muted">データはこの端末のブラウザ内だけに保存される（外部送信なし）。</p>
+      <div class="rowbtns">
+        <button class="sub" id="btnExport">データを書き出す（JSONコピー）</button>
+        <button class="sub" id="btnImport">読み込む</button>
+      </div>
+      <textarea id="ioBox" class="hidden" placeholder="ここにJSONを貼って「読み込む」を押す／書き出したJSONがここに出る"></textarea>
+    </div>
+  </section>
+
+  <!-- レース追加 -->
+  <section id="view-new" class="hidden">
+    <div class="card">
+      <h2>レースを追加</h2>
+      <label>レース名</label>
+      <input id="newName" list="g1list" placeholder="例：マイルチャンピオンシップ">
+      <datalist id="g1list"></datalist>
+      <label>日付</label>
+      <input id="newDate" type="date">
+      <label>発走時刻（任意）</label>
+      <input id="newPost" type="time">
+      <div class="rowbtns">
+        <button id="btnCreate">作成</button>
+        <button class="sub" id="btnCancelNew">戻る</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- レース詳細 -->
+  <section id="view-race" class="hidden">
+    <div class="card">
+      <h2 id="raceTitle"></h2>
+      <p class="muted" id="raceMeta"></p>
+      <div class="rowbtns">
+        <button class="sub" id="btnBack">← 一覧へ</button>
+        <button class="danger" id="btnDeleteRace">このレースを削除</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>記録A：発走10分前のオッズ</h2>
+      <textarea id="pasteA" placeholder="netkeibaやJRAの単勝オッズ表をコピーして、ここに貼り付け"></textarea>
+      <div class="rowbtns">
+        <button id="btnParseA">読み込んで表にする</button>
+        <button class="sub" id="btnSample">サンプルで試す</button>
+      </div>
+      <div id="gridA"></div>
+      <div class="rowbtns"><button id="btnSaveA" class="hidden">記録Aを保存</button></div>
+      <p class="muted" id="savedA"></p>
+    </div>
+
+    <div class="card">
+      <h2>記録B：直前（2〜3分前）のオッズ</h2>
+      <textarea id="pasteB" placeholder="発走2〜3分前に、もう一度オッズ表をコピーして貼り付け"></textarea>
+      <div class="rowbtns">
+        <button id="btnParseB">読み込んで表にする</button>
+      </div>
+      <div id="gridB"></div>
+      <div class="rowbtns"><button id="btnSaveB" class="hidden">記録Bを保存</button></div>
+      <p class="muted" id="savedB"></p>
+    </div>
+
+    <div class="card hidden" id="rankCard">
+      <h2>📉 下落率ランキング</h2>
+      <div id="rankTable"></div>
+      <p class="muted">下落率＝（A−B）÷A。研究では「最終オッズが同じなら、直前に下がった馬ほどリターンが高い」。ただし的中率が上がっても儲かるとは限らない（控除率20%）。自分の検証データで確かめよう。</p>
+      <h3>レース後に着順を入力</h3>
+      <p class="muted">各馬の着順を選んで保存すると、検証データに反映される。</p>
+      <div class="rowbtns"><button id="btnSaveResults">着順を保存</button></div>
+    </div>
+  </section>
+
+  <!-- 統計 -->
+  <section id="view-stats" class="hidden">
+    <div class="card">
+      <h2>📊 検証データ（下落率の帯別）</h2>
+      <div id="statsBody"></div>
+      <p class="muted">単勝回収率は「直前オッズ（記録B）を確定オッズの近似として、1着なら B×100円 の払戻」で計算した目安。サンプルが少ないうちは数字は荒れる。</p>
+      <div class="rowbtns"><button class="sub" id="btnBackFromStats">← 一覧へ</button></div>
+    </div>
+  </section>
+</main>
+
+<script>
+'use strict';
+/* ========= 純粋ロジック（テスト可能） ========= */
+function parseOddsText(text) {
+  const horses = {};
+  const isOdds = t => /^\d{1,3}\.\d$/.test(t) && parseFloat(t) >= 1.0;
+  const isNum = t => /^\d{1,2}$/.test(t) && +t >= 1 && +t <= 18;
+  const isName = t => /[^\d.]/.test(t) && !/^\d+$/.test(t) && t.length >= 2;
+  function accept(num, name, odds, pop) {
+    if (!num || !odds) return;
+    horses[num] = { name: name || horses[num]?.name || '', odds, pop: pop || horses[num]?.pop || null };
+  }
+  const lines = String(text).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  for (const line of lines) {
+    const toks = line.split(/[\s\t,、]+/).filter(Boolean);
+    const oi = toks.findIndex(isOdds);
+    if (oi < 0) continue;
+    const odds = parseFloat(toks[oi]);
+    let name = '', num = null, pop = null;
+    for (let i = oi - 1; i >= 0; i--) {
+      if (!name && isName(toks[i])) name = toks[i];
+      else if (name && num === null && isNum(toks[i])) { num = +toks[i]; break; }
+      else if (!name && isNum(toks[i]) && num === null) {
+        // 馬名より前に馬番だけあるケースは次のトークンで馬名を探すため保留
+        if (num === null) num = +toks[i];
+      }
+    }
+    if (oi + 1 < toks.length && isNum(toks[oi + 1])) pop = +toks[oi + 1];
+    accept(num, name, odds, pop);
+  }
+  if (Object.keys(horses).length < 6) {
+    // トークン列モード（表がセル単位で改行されるコピペ用）
+    const toks = String(text).split(/[\s\t,、\r\n]+/).filter(Boolean);
+    for (let i = 0; i < toks.length; i++) {
+      if (!isOdds(toks[i])) continue;
+      const odds = parseFloat(toks[i]);
+      let name = '', num = null, pop = null;
+      for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+        if (!name && isName(toks[j])) name = toks[j];
+        else if (name && num === null && isNum(toks[j])) { num = +toks[j]; break; }
+      }
+      if (i + 1 < toks.length && isNum(toks[i + 1])) pop = +toks[i + 1];
+      if (num !== null) accept(num, name, odds, pop);
+    }
+  }
+  return horses;
+}
+function dropRate(a, b) { return a > 0 ? (a - b) / a * 100 : 0; }
+function bandOf(rate) {
+  if (rate >= 20) return '20%以上下落';
+  if (rate >= 10) return '10〜20%下落';
+  if (rate >= 5) return '5〜10%下落';
+  if (rate >= 0) return '0〜5%下落';
+  return '上昇（ドリフター）';
+}
+const BANDS = ['20%以上下落', '10〜20%下落', '5〜10%下落', '0〜5%下落', '上昇（ドリフター）'];
+function computeStats(races) {
+  const st = {};
+  for (const b of BANDS) st[b] = { n: 0, win: 0, place: 0, ret: 0 };
+  for (const r of races) {
+    if (!r.snapA || !r.snapB || !r.results) continue;
+    for (const num of Object.keys(r.snapB.horses)) {
+      const a = r.snapA.horses[num], b = r.snapB.horses[num], fin = r.results[num];
+      if (!a || !b || !fin) continue;
+      const s = st[bandOf(dropRate(a.odds, b.odds))];
+      s.n++;
+      if (fin === 1) { s.win++; s.ret += b.odds; }
+      if (fin <= 3) s.place++;
+    }
+  }
+  return st;
+}
+</script>
+<script>
+'use strict';
+/* ========= UI ========= */
+const KEY = 'keiba_radar_v1';
+const G1_PRESETS = [
+  ['マイルチャンピオンシップ', '2026-11-22', '15:40'], ['ジャパンカップ', '2026-11-29', '15:40'],
+  ['チャンピオンズカップ', '2026-12-06', '15:30'], ['阪神ジュベナイルフィリーズ', '2026-12-13', '15:40'],
+  ['朝日杯フューチュリティステークス', '2026-12-20', '15:40'], ['有馬記念', '2026-12-27', '15:40']
+];
+let DB = load();
+let curId = null;         // 表示中のレースid
+let draftA = null, draftB = null;  // 解析直後の下書き（馬番→{name,odds,pop}）
+function load() { try { return JSON.parse(localStorage.getItem(KEY)) || { races: [] }; } catch { return { races: [] }; } }
+function save() { localStorage.setItem(KEY, JSON.stringify(DB)); }
+const $ = id => document.getElementById(id);
+function show(view) { for (const v of ['view-list', 'view-new', 'view-race', 'view-stats']) $(v).classList.toggle('hidden', v !== view); }
+function curRace() { return DB.races.find(r => r.id === curId); }
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/* ---- 一覧 ---- */
+function renderList() {
+  const el = $('raceList');
+  if (!DB.races.length) { el.innerHTML = '<p class="muted">まだレースがない。「＋ レースを追加」からどうぞ。</p>'; return; }
+  el.innerHTML = DB.races.map(r => {
+    const st = r.results ? '結果入力済' : r.snapB ? '記録B済' : r.snapA ? '記録A済' : '未記録';
+    return `<div class="race-item" data-id="${r.id}"><div><b>${esc(r.name)}</b><br><span class="muted">${esc(r.date)} ${esc(r.post || '')}</span></div><span class="badge">${st}</span></div>`;
+  }).join('');
+  el.querySelectorAll('.race-item').forEach(d => d.onclick = () => openRace(d.dataset.id));
+}
+
+/* ---- レース詳細 ---- */
+function openRace(id) {
+  curId = id; draftA = draftB = null;
+  const r = curRace();
+  $('raceTitle').textContent = '🏇 ' + r.name;
+  $('raceMeta').textContent = `${r.date} ${r.post || ''} 発走`;
+  $('pasteA').value = ''; $('pasteB').value = '';
+  $('gridA').innerHTML = ''; $('gridB').innerHTML = '';
+  $('btnSaveA').classList.add('hidden'); $('btnSaveB').classList.add('hidden');
+  $('savedA').textContent = r.snapA ? `保存済み：${r.snapA.at}（${Object.keys(r.snapA.horses).length}頭）` : '';
+  $('savedB').textContent = r.snapB ? `保存済み：${r.snapB.at}（${Object.keys(r.snapB.horses).length}頭）` : '';
+  renderRank();
+  show('view-race');
+}
+function gridHTML(draft, tag) {
+  const nums = Object.keys(draft).map(Number).sort((a, b) => a - b);
+  if (!nums.length) return '<p class="muted">読み取れなかった。貼り付け内容を確認するか、下の表に直接入力してね。</p>' + addRowBtn(tag);
+  return `<table><tr><th>馬番</th><th class="name">馬名</th><th>単勝</th><th>人気</th><th></th></tr>` +
+    nums.map(n => `<tr>
+      <td>${n}</td>
+      <td class="name"><input class="grid-name" data-tag="${tag}" data-num="${n}" data-f="name" value="${esc(draft[n].name)}"></td>
+      <td><input class="grid-input" type="number" step="0.1" min="1" data-tag="${tag}" data-num="${n}" data-f="odds" value="${draft[n].odds}"></td>
+      <td><input class="grid-input" type="number" min="1" max="18" data-tag="${tag}" data-num="${n}" data-f="pop" value="${draft[n].pop ?? ''}"></td>
+      <td><button class="sub" data-del="${tag}:${n}">✕</button></td></tr>`).join('') + `</table>` + addRowBtn(tag);
+}
+function addRowBtn(tag) { return `<div class="rowbtns"><button class="sub" data-add="${tag}">＋ 馬を追加</button></div>`; }
+function bindGrid(tag) {
+  const grid = tag === 'A' ? $('gridA') : $('gridB');
+  grid.querySelectorAll('input').forEach(inp => inp.onchange = () => {
+    const d = tag === 'A' ? draftA : draftB; if (!d) return;
+    const n = inp.dataset.num, f = inp.dataset.f;
+    if (!d[n]) d[n] = { name: '', odds: 0, pop: null };
+    d[n][f] = f === 'name' ? inp.value : (inp.value === '' ? null : parseFloat(inp.value));
+  });
+  grid.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const d = tag === 'A' ? draftA : draftB; delete d[b.dataset.del.split(':')[1]];
+    grid.innerHTML = gridHTML(d, tag); bindGrid(tag);
+  });
+  grid.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+    const d = tag === 'A' ? draftA : draftB;
+    const next = Math.max(0, ...Object.keys(d).map(Number)) + 1;
+    d[next] = { name: '', odds: 0, pop: null };
+    grid.innerHTML = gridHTML(d, tag); bindGrid(tag);
+  });
+}
+function parseInto(which) {
+  const text = $(which === 'A' ? 'pasteA' : 'pasteB').value;
+  const parsed = parseOddsText(text);
+  if (which === 'A') draftA = parsed; else draftB = parsed;
+  const grid = which === 'A' ? $('gridA') : $('gridB');
+  grid.innerHTML = gridHTML(parsed, which); bindGrid(which);
+  $(which === 'A' ? 'btnSaveA' : 'btnSaveB').classList.remove('hidden');
+}
+function saveSnap(which) {
+  const r = curRace(); const d = which === 'A' ? draftA : draftB;
+  const horses = {};
+  for (const n of Object.keys(d)) if (d[n].odds > 0) horses[n] = { name: d[n].name || '', odds: d[n].odds, pop: d[n].pop || null };
+  if (!Object.keys(horses).length) { alert('オッズが1頭も入ってないよ'); return; }
+  const at = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  r[which === 'A' ? 'snapA' : 'snapB'] = { at, horses };
+  save();
+  $(which === 'A' ? 'savedA' : 'savedB').textContent = `保存済み：${at}（${Object.keys(horses).length}頭）`;
+  renderRank();
+}
+function rateClass(rate) { return rate >= 20 ? 'drop-hot' : rate >= 10 ? 'drop-mid' : rate >= 5 ? 'drop-low' : rate < 0 ? 'rose' : ''; }
+function renderRank() {
+  const r = curRace(); if (!r) return;
+  const card = $('rankCard');
+  if (!r.snapA || !r.snapB) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const rows = Object.keys(r.snapB.horses).filter(n => r.snapA.horses[n]).map(n => {
+    const a = r.snapA.horses[n], b = r.snapB.horses[n];
+    return { n: +n, name: b.name || a.name, a: a.odds, b: b.odds, rate: dropRate(a.odds, b.odds), pop: b.pop };
+  }).sort((x, y) => y.rate - x.rate);
+  const finOpts = sel => ['', '1', '2', '3', '4', '5', '9'].map(v =>
+    `<option value="${v}" ${String(sel ?? '') === v ? 'selected' : ''}>${v === '' ? '未入力' : v === '9' ? '着外' : v + '着'}</option>`).join('');
+  $('rankTable').innerHTML = `<table><tr><th>馬番</th><th class="name">馬名</th><th>A</th><th>B</th><th>下落率</th><th>着順</th></tr>` +
+    rows.map(x => `<tr>
+      <td>${x.n}</td><td class="name">${esc(x.name)}</td><td>${x.a.toFixed(1)}</td><td>${x.b.toFixed(1)}</td>
+      <td class="${rateClass(x.rate)}">${x.rate >= 0 ? '▼' : '▲'}${Math.abs(x.rate).toFixed(1)}%</td>
+      <td><select class="fin" data-num="${x.n}">${finOpts(r.results?.[x.n])}</select></td></tr>`).join('') + `</table>`;
+}
+
+/* ---- 統計 ---- */
+function renderStats() {
+  const st = computeStats(DB.races);
+  const rows = BANDS.map(b => {
+    const s = st[b];
+    const win = s.n ? (s.win / s.n * 100).toFixed(1) + '%' : '―';
+    const plc = s.n ? (s.place / s.n * 100).toFixed(1) + '%' : '―';
+    const rec = s.n ? Math.round(s.ret / s.n * 100) + '%' : '―';
+    return `<tr class="stat-band"><td>${b}</td><td>${s.n}</td><td>${win}</td><td>${plc}</td><td>${rec}</td></tr>`;
+  }).join('');
+  $('statsBody').innerHTML = `<table><tr><th>下落率の帯</th><th>頭数</th><th>勝率</th><th>複勝率</th><th>単回収率</th></tr>${rows}</table>`;
+}
+
+/* ---- イベント ---- */
+document.addEventListener('DOMContentLoaded', () => {
+  $('g1list').innerHTML = G1_PRESETS.map(g => `<option value="${g[0]}">`).join('');
+  renderList();
+  $('btnNew').onclick = () => {
+    const t = new Date(); $('newDate').value = t.toISOString().slice(0, 10);
+    show('view-new');
+  };
+  $('newName').onchange = () => {
+    const g = G1_PRESETS.find(x => x[0] === $('newName').value);
+    if (g) { $('newDate').value = g[1]; $('newPost').value = g[2]; }
+  };
+  $('btnCancelNew').onclick = () => show('view-list');
+  $('btnCreate').onclick = () => {
+    const name = $('newName').value.trim(); if (!name) { alert('レース名を入れてね'); return; }
+    const r = { id: 'r' + Date.now(), name, date: $('newDate').value, post: $('newPost').value, snapA: null, snapB: null, results: null };
+    DB.races.push(r); save(); renderList(); openRace(r.id);
+  };
+  $('btnBack').onclick = () => { renderList(); show('view-list'); };
+  $('btnDeleteRace').onclick = () => {
+    if (!confirm('このレースのデータを削除する？')) return;
+    DB.races = DB.races.filter(r => r.id !== curId); save(); renderList(); show('view-list');
+  };
+  $('btnParseA').onclick = () => parseInto('A');
+  $('btnParseB').onclick = () => parseInto('B');
+  $('btnSaveA').onclick = () => saveSnap('A');
+  $('btnSaveB').onclick = () => saveSnap('B');
+  $('btnSample').onclick = () => {
+    $('pasteA').value = SAMPLE_A; $('pasteB').value = SAMPLE_B;
+    parseInto('A'); parseInto('B');
+    alert('サンプルを読み込んだよ。「記録Aを保存」「記録Bを保存」を押すとランキングが出る（あとでレースごと削除できる）');
+  };
+  $('btnSaveResults').onclick = () => {
+    const r = curRace(); r.results = r.results || {};
+    document.querySelectorAll('select.fin').forEach(s => {
+      if (s.value) r.results[s.dataset.num] = +s.value; else delete r.results[s.dataset.num];
+    });
+    save(); alert('着順を保存したよ。検証データに反映された');
+  };
+  $('btnStats').onclick = () => { renderStats(); show('view-stats'); };
+  $('btnBackFromStats').onclick = () => show('view-list');
+  $('btnExport').onclick = () => {
+    const box = $('ioBox'); box.classList.remove('hidden');
+    box.value = JSON.stringify(DB); box.select();
+    document.execCommand?.('copy');
+    alert('JSONを出したよ（コピー済みのはず）。メモ帳などに保存しておいてね');
+  };
+  $('btnImport').onclick = () => {
+    const box = $('ioBox'); box.classList.remove('hidden');
+    if (!box.value.trim()) return;
+    try { DB = JSON.parse(box.value); save(); renderList(); alert('読み込んだよ'); }
+    catch { alert('読み込めなかった。JSONの形式を確認してね'); }
+  };
+});
+const SAMPLE_A = `1 1 サンプルイチバン 3.2 1
+2 3 サンプルサンバン 5.6 2
+3 5 サンプルゴバン 8.4 3
+4 7 サンプルナナ 12.5 5
+5 9 サンプルキュウ 18.9 7
+6 11 サンプルジュウイチ 25.4 9
+7 13 サンプルジュウサン 41.2 12
+8 15 サンプルジュウゴ 66.8 15`;
+const SAMPLE_B = `1 1 サンプルイチバン 2.6 1
+2 3 サンプルサンバン 5.9 3
+3 5 サンプルゴバン 6.1 2
+4 7 サンプルナナ 13.8 6
+5 9 サンプルキュウ 12.3 4
+6 11 サンプルジュウイチ 27.0 10
+7 13 サンプルジュウサン 30.5 8
+8 15 サンプルジュウゴ 88.0 16`;
+</script>
+</body>
+</html>
